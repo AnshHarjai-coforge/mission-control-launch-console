@@ -225,3 +225,6 @@ __marimo__/
 /TODO.md
 /HANDOFF.md
 /docs/implementation-plan.md
+
+# SQLite database
+data/mission-control.sqlite
