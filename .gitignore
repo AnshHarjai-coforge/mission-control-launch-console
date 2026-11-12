@@ -218,3 +218,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local planning notes. Kept on this machine, not on GitHub.
+/AGENTS.md
+/PLAN.md
+/TODO.md
+/HANDOFF.md
+/docs/implementation-plan.md
