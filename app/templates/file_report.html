@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>File a report</title>
+</head>
+<body>
+  <h1>File a report</h1>
+  {% if filed %}
+  <p>Report filed.</p>
+  <h2>Filed report</h2>
+  <p>Name: {{ values.name }}</p>
+  <p>Station: {{ values.station }}</p>
+  <p>Wind: {{ values.wind }}</p>
+  <p>Temperature: {{ values.temperature }}</p>
+  <p>Fuel: {{ values.fuel }}</p>
+  <p>Note: {{ values.note }}</p>
+  {% endif %}
+  <form method="post" action="/">
+    <p>
+      <label for="name">Name</label>
+      <input id="name" name="name" type="text" value="{{ values.name }}">
+      {% if errors["name"] %}
+      <span>{{ errors["name"] }}</span>
+      {% endif %}
+    </p>
+    <p>
+      <label for="station">Station</label>
+      <input id="station" name="station" type="text" value="{{ values.station }}">
+      {% if errors["station"] %}
+      <span>{{ errors["station"] }}</span>
+      {% endif %}
+    </p>
+    <p>
+      <label for="wind">Wind</label>
+      <input id="wind" name="wind" type="text" value="{{ values.wind }}">
+      {% if errors["wind"] %}
+      <span>{{ errors["wind"] }}</span>
+      {% endif %}
+    </p>
+    <p>
+      <label for="temperature">Temperature</label>
+      <input id="temperature" name="temperature" type="text" value="{{ values.temperature }}">
+      {% if errors["temperature"] %}
+      <span>{{ errors["temperature"] }}</span>
+      {% endif %}
+    </p>
+    <p>
+      <label for="fuel">Fuel</label>
+      <input id="fuel" name="fuel" type="text" value="{{ values.fuel }}">
+      {% if errors["fuel"] %}
+      <span>{{ errors["fuel"] }}</span>
+      {% endif %}
+    </p>
+    <p>
+      <label for="note">Note</label>
+      <textarea id="note" name="note">{{ values.note }}</textarea>
+      {% if errors["note"] %}
+      <span>{{ errors["note"] }}</span>
+      {% endif %}
+    </p>
+    <button type="submit">File report</button>
+  </form>
+</body>
+</html>
