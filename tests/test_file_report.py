@@ -1,3 +1,5 @@
+import json
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -29,6 +31,14 @@ _FILED_COLUMNS = {
     "temperature",
     "fuel",
     "note",
+}
+_VERDICT_COLUMNS = {
+    "verdict",
+    "broken_limits",
+    "model_seriousness",
+    "deadline_seriousness",
+    "deadline_minutes",
+    "due_at",
 }
 
 
@@ -64,11 +74,13 @@ def test_valid_report_is_saved_and_readable_from_a_new_connection(monkeypatch, t
     assert row["wind"] == "25.1"
     assert row["temperature"] == "18.5"
     assert row["fuel"] == "99.5"
-    _assert_other_columns_unset(row)
+    assert f'href="/console/{report.id}"' in response.text
+    _assert_no_go_for_wind(row)
+    _assert_pipeline_columns_unset(row)
     assert client.app.state.settings.azure_foundry_api_key == ""
 
 
-def test_wind_outside_the_launch_limit_is_saved_without_a_verdict(monkeypatch, tmp_path):
+def test_wind_outside_the_launch_limit_is_saved_as_no_go(monkeypatch, tmp_path):
     database_path = tmp_path / "mission-control.sqlite"
     client = _client(monkeypatch, database_path)
     payload = _valid_payload()
@@ -78,7 +90,6 @@ def test_wind_outside_the_launch_limit_is_saved_without_a_verdict(monkeypatch, t
 
     assert response.status_code == 200
     assert "Report filed." in response.text
-    assert "no_go" not in response.text
     report, row = _read_saved(database_path)
     assert report.wind == Decimal(40)
     assert report.name == payload["name"]
@@ -87,8 +98,8 @@ def test_wind_outside_the_launch_limit_is_saved_without_a_verdict(monkeypatch, t
     assert report.fuel == Decimal(payload["fuel"])
     assert report.note == payload["note"]
     assert row["wind"] == "40"
-    assert row["verdict"] is None
-    _assert_other_columns_unset(row)
+    _assert_no_go_for_wind(row)
+    _assert_pipeline_columns_unset(row)
 
 
 def test_maximum_lengths_are_saved(monkeypatch, tmp_path):
@@ -110,7 +121,8 @@ def test_maximum_lengths_are_saved(monkeypatch, tmp_path):
     assert report.wind == Decimal("25.1")
     assert report.temperature == Decimal("18.5")
     assert report.fuel == Decimal("99.5")
-    _assert_other_columns_unset(row)
+    _assert_no_go_for_wind(row)
+    _assert_pipeline_columns_unset(row)
 
 
 @pytest.mark.parametrize("field", _FIELDS)
@@ -293,6 +305,7 @@ def test_requests_do_not_create_the_default_database(monkeypatch, tmp_path):
 
     assert client.get("/").status_code == 200
     assert client.get("/health").status_code == 200
+    assert client.get("/console").status_code == 200
     assert client.post("/", data=_valid_payload()).status_code == 200
     rejected = _valid_payload()
     rejected["fuel"] = "not-a-number"
@@ -346,8 +359,20 @@ def _saved_rows(database_path: Path) -> list:
         connection.close()
 
 
-def _assert_other_columns_unset(row) -> None:
-    stored = dict(row)
-    for column, value in stored.items():
-        if column not in _FILED_COLUMNS:
-            assert value is None
+def _assert_pipeline_columns_unset(row) -> None:
+    for column, value in dict(row).items():
+        if column in _FILED_COLUMNS or column in _VERDICT_COLUMNS:
+            continue
+        assert value is None
+
+
+def _assert_no_go_for_wind(row) -> None:
+    assert row["verdict"] == "no_go"
+    assert json.loads(row["broken_limits"]) == ["wind_knots"]
+    assert row["model_seriousness"] == "low"
+    assert row["deadline_seriousness"] == "high"
+    assert row["deadline_minutes"] == 5
+    created_at = datetime.fromisoformat(row["created_at"])
+    due_at = datetime.fromisoformat(row["due_at"])
+    assert created_at.utcoffset() == timedelta(0)
+    assert due_at - created_at == timedelta(minutes=5)

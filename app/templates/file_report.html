@@ -6,8 +6,10 @@
 </head>
 <body>
   <h1>File a report</h1>
+  <p><a href="/console">Console</a></p>
   {% if filed %}
   <p>Report filed.</p>
+  <p><a href="/console/{{ report_id }}">Open this report</a></p>
   <h2>Filed report</h2>
   <p>Name: {{ values.name }}</p>
   <p>Station: {{ values.station }}</p>
