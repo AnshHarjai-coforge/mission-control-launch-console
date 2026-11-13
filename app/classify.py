@@ -5,7 +5,7 @@ seriousness medium, unless that part of the answer was on the list. The
 replacement does not change the launch verdict.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app.facts import ReportFacts
 from app.model_client import (
@@ -41,6 +41,9 @@ class SortResult:
     vehicle_part_stand_in: bool | None
     model_seriousness: str | None
     unreachable: bool
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    call_failure: str | None = None
 
 
 def classify_report(client: ModelClient, facts: ReportFacts) -> SortResult:
@@ -51,13 +54,20 @@ def classify_report(client: ModelClient, facts: ReportFacts) -> SortResult:
         SORT_SHAPE,
     )
     if response.failure == FAILURE_UNREACHABLE:
-        return SortResult(
+        decided = SortResult(
             vehicle_part=None,
             vehicle_part_stand_in=None,
             model_seriousness=None,
             unreachable=True,
         )
-    return interpret_sort(response)
+    else:
+        decided = interpret_sort(response)
+    return replace(
+        decided,
+        input_tokens=response.input_tokens,
+        output_tokens=response.output_tokens,
+        call_failure=response.failure,
+    )
 
 
 def interpret_sort(response: ModelResponse) -> SortResult:

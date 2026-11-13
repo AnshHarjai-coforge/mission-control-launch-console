@@ -26,6 +26,7 @@ from app.prompts import (
     review_system,
     review_user,
 )
+from app.trace import RecordedStep, draft_name, model_step, review_name
 
 _MAX_ROUNDS = 3
 
@@ -52,6 +53,7 @@ class BriefingOutcome:
     last_review_comment: str
     status: str
     unreachable: bool
+    steps: tuple[RecordedStep, ...]
 
 
 def write_briefing(
@@ -66,6 +68,7 @@ def write_briefing(
     comment = ""
     accepted = False
     rounds = 0
+    steps: list[RecordedStep] = []
     for _ in range(_MAX_ROUNDS):
         rounds += 1
         draft_response = client.complete(
@@ -75,9 +78,27 @@ def write_briefing(
             DRAFT_SHAPE,
         )
         if draft_response.failure == FAILURE_UNREACHABLE:
-            return _incomplete(usable, rounds, accepted=False, comment=comment)
+            steps.append(
+                model_step(
+                    draft_name(rounds),
+                    draft_response,
+                    outcome="error",
+                    detail="The model could not be reached.",
+                    round_number=rounds,
+                )
+            )
+            return _incomplete(usable, rounds, accepted=False, comment=comment, steps=tuple(steps))
         draft = _draft_from(draft_response)
         if draft is None:
+            steps.append(
+                model_step(
+                    draft_name(rounds),
+                    draft_response,
+                    outcome="error",
+                    detail="The draft was the wrong shape.",
+                    round_number=rounds,
+                )
+            )
             comment = "The draft was the wrong shape."
             accepted = False
             continue
@@ -88,9 +109,27 @@ def write_briefing(
             minutes=deadline_minutes,
         )
         if mismatch is not None:
+            steps.append(
+                model_step(
+                    draft_name(rounds),
+                    draft_response,
+                    outcome="error",
+                    detail=mismatch,
+                    round_number=rounds,
+                )
+            )
             comment = mismatch
             accepted = False
             continue
+        steps.append(
+            model_step(
+                draft_name(rounds),
+                draft_response,
+                outcome="ok",
+                detail="Draft matches the code.",
+                round_number=rounds,
+            )
+        )
         usable = draft.summary
         review_response = client.complete(
             TASK_REVIEW,
@@ -99,12 +138,39 @@ def write_briefing(
             REVIEW_SHAPE,
         )
         if review_response.failure == FAILURE_UNREACHABLE:
-            return _incomplete(usable, rounds, accepted=False, comment=comment)
+            steps.append(
+                model_step(
+                    review_name(rounds),
+                    review_response,
+                    outcome="error",
+                    detail="The model could not be reached.",
+                    round_number=rounds,
+                )
+            )
+            return _incomplete(usable, rounds, accepted=False, comment=comment, steps=tuple(steps))
         review = _review_from(review_response)
         if review is None:
+            steps.append(
+                model_step(
+                    review_name(rounds),
+                    review_response,
+                    outcome="error",
+                    detail="The review was the wrong shape.",
+                    round_number=rounds,
+                )
+            )
             comment = "The review was the wrong shape."
             accepted = False
             continue
+        steps.append(
+            model_step(
+                review_name(rounds),
+                review_response,
+                outcome="ok",
+                detail="Accepted." if review.accepted else "Changes requested.",
+                round_number=rounds,
+            )
+        )
         comment = review.feedback
         if review.accepted:
             accepted = True
@@ -118,6 +184,7 @@ def write_briefing(
         last_review_comment=comment,
         status=status,
         unreachable=False,
+        steps=tuple(steps),
     )
 
 
@@ -222,6 +289,7 @@ def _incomplete(
     *,
     accepted: bool,
     comment: str,
+    steps: tuple[RecordedStep, ...],
 ) -> BriefingOutcome:
     return BriefingOutcome(
         briefing=briefing,
@@ -230,4 +298,5 @@ def _incomplete(
         last_review_comment=comment,
         status="incomplete",
         unreachable=True,
+        steps=steps,
     )

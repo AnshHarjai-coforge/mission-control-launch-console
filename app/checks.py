@@ -6,7 +6,7 @@ That failure does not mark the report as spam and does not change the verdict.
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from app.facts import ReportFacts
 from app.model_client import (
@@ -30,6 +30,9 @@ class CheckResult:
     flagged: bool
     reason: str
     unreachable: bool
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    call_failure: str | None = None
 
 
 @dataclass(frozen=True)
@@ -84,8 +87,15 @@ def _run_one_check(client: ModelClient, task: str, facts: ReportFacts) -> CheckR
         CHECK_SHAPE,
     )
     if response.failure == FAILURE_UNREACHABLE:
-        return CheckResult(flagged=False, reason=CHECK_FAILED, unreachable=True)
-    return interpret_check(response)
+        decided = CheckResult(flagged=False, reason=CHECK_FAILED, unreachable=True)
+    else:
+        decided = interpret_check(response)
+    return replace(
+        decided,
+        input_tokens=response.input_tokens,
+        output_tokens=response.output_tokens,
+        call_failure=response.failure,
+    )
 
 
 def interpret_check(response: ModelResponse) -> CheckResult:

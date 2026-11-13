@@ -1,16 +1,19 @@
 """SQLite storage for launch reports.
 
-Uses the standard library only. Wind, temperature, fuel, and cost are stored
-as text so a decimal such as 25.1 round-trips exactly. Columns that later
-branches fill in are created here and left unset.
+The database is the standard library sqlite3 module, with no ORM. Wind,
+temperature, fuel, and cost are stored as text so a decimal such as 25.1
+round-trips exactly.
 """
 
 import json
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+
+from app.cost import show_cost
 
 DEFAULT_DATABASE_PATH = Path("data") / "mission-control.sqlite"
 
@@ -120,6 +123,7 @@ class ConsoleReport:
     status: str | None
     approver_name: str | None
     approved_at: str | None
+    total_cost: str | None
 
     @property
     def broken_limits_label(self) -> str:
@@ -132,6 +136,47 @@ class ConsoleReport:
         if self.deadline_minutes is None:
             return ""
         return f"{self.deadline_minutes} minutes"
+
+    @property
+    def total_cost_label(self) -> str:
+        if self.total_cost is None or self.total_cost == "":
+            return show_cost(Decimal(0))
+        return show_cost(Decimal(self.total_cost))
+
+
+@dataclass(frozen=True)
+class TraceStep:
+    order: int
+    name: str
+    kind: str
+    round_number: int | None
+    input_tokens: int | None
+    output_tokens: int | None
+    cost: str
+    outcome: str
+    detail: str
+
+    @property
+    def kind_label(self) -> str:
+        if self.kind == "code":
+            return "Code"
+        return "Model call"
+
+    @property
+    def input_tokens_label(self) -> int:
+        if self.input_tokens is None:
+            return 0
+        return self.input_tokens
+
+    @property
+    def output_tokens_label(self) -> int:
+        if self.output_tokens is None:
+            return 0
+        return self.output_tokens
+
+    @property
+    def cost_label(self) -> str:
+        return show_cost(Decimal(self.cost))
 
 
 def open_database(path: str | Path | None = None) -> sqlite3.Connection:
@@ -360,6 +405,65 @@ def approve_report(
     return "rejected"
 
 
+def save_trace(
+    connection: sqlite3.Connection,
+    report_id: int,
+    steps: Sequence[TraceStep],
+    total_cost: str,
+) -> None:
+    """Store the steps that ran and the report total.
+
+    The statement does not mention the verdict, the deadline, or the status.
+    """
+    for step in steps:
+        connection.execute(
+            """
+            INSERT INTO trace_steps (
+                report_id, step_order, name, kind, round_number,
+                input_tokens, output_tokens, cost, outcome, detail
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                report_id,
+                step.order,
+                step.name,
+                step.kind,
+                step.round_number,
+                step.input_tokens,
+                step.output_tokens,
+                step.cost,
+                step.outcome,
+                step.detail,
+            ),
+        )
+    cursor = connection.execute(
+        """
+        UPDATE reports
+        SET total_cost = ?
+        WHERE id = ?
+        """,
+        (total_cost, report_id),
+    )
+    if cursor.rowcount != 1:
+        raise LookupError(f"No report with id {report_id}")
+
+
+def list_trace_steps(connection: sqlite3.Connection, report_id: int) -> list[TraceStep]:
+    """Return the steps for one report, in the order they were recorded."""
+    rows = connection.execute(
+        """
+        SELECT step_order, name, kind, round_number, input_tokens, output_tokens,
+               cost, outcome, detail
+        FROM trace_steps
+        WHERE report_id = ?
+        ORDER BY step_order ASC, id ASC
+        """,
+        (report_id,),
+    ).fetchall()
+    return [_trace_step(row) for row in rows]
+
+
 def list_console_reports(connection: sqlite3.Connection) -> list[ConsoleReport]:
     """Return saved reports, newest filing first."""
     rows = connection.execute(
@@ -370,7 +474,7 @@ def list_console_reports(connection: sqlite3.Connection) -> list[ConsoleReport]:
                hidden_instruction, hidden_instruction_reason,
                missing_information, missing_information_reason,
                panic, panic_reason, briefing, status,
-               approver_name, approved_at
+               approver_name, approved_at, total_cost
         FROM reports
         ORDER BY created_at DESC, id DESC
         """
@@ -388,7 +492,7 @@ def read_console_report(connection: sqlite3.Connection, report_id: int) -> Conso
                hidden_instruction, hidden_instruction_reason,
                missing_information, missing_information_reason,
                panic, panic_reason, briefing, status,
-               approver_name, approved_at
+               approver_name, approved_at, total_cost
         FROM reports
         WHERE id = ?
         """,
@@ -425,6 +529,21 @@ def _console_report(row: sqlite3.Row) -> ConsoleReport:
         status=row["status"],
         approver_name=row["approver_name"],
         approved_at=row["approved_at"],
+        total_cost=row["total_cost"],
+    )
+
+
+def _trace_step(row: sqlite3.Row) -> TraceStep:
+    return TraceStep(
+        order=row["step_order"],
+        name=row["name"],
+        kind=row["kind"],
+        round_number=row["round_number"],
+        input_tokens=row["input_tokens"],
+        output_tokens=row["output_tokens"],
+        cost=row["cost"],
+        outcome=row["outcome"],
+        detail=row["detail"] or "",
     )
 
 

@@ -3,6 +3,13 @@
 <head>
   <meta charset="utf-8">
   <title>Report {{ report.id }}</title>
+  <style>
+    .step-card {
+      border: 1px solid #999;
+      margin: 0.75rem 0;
+      padding: 0.75rem 1rem;
+    }
+  </style>
 </head>
 <body>
   <h1>Report {{ report.id }}</h1>
@@ -31,6 +38,22 @@
   {% if report.briefing %}
   <p>Briefing: {{ report.briefing }}</p>
   {% endif %}
+  <p>Total cost: {{ report.total_cost_label }}</p>
+  <h2>Steps</h2>
+  {% for step in steps %}
+  <article class="step-card">
+    <h3>{{ step.name }}</h3>
+    <p>Kind: {{ step.kind_label }}</p>
+    <p>Input tokens: {{ step.input_tokens_label }}</p>
+    <p>Output tokens: {{ step.output_tokens_label }}</p>
+    <p>Cost: {{ step.cost_label }}</p>
+    {% if step.outcome == "error" %}
+    <p>Failed: {{ step.detail }}</p>
+    {% elif step.detail %}
+    <p>{{ step.detail }}</p>
+    {% endif %}
+  </article>
+  {% endfor %}
   <p>Status: {{ report.status or "" }}</p>
   {% if report.status == "approved" %}
   <p>Approved by: {{ report.approver_name }}</p>

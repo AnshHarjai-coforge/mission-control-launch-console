@@ -18,6 +18,7 @@
         <th>Broken limits</th>
         <th>Deadline</th>
         <th>Due</th>
+        <th>Cost</th>
         <th>Status</th>
       </tr>
     </thead>
@@ -29,6 +30,7 @@
         <td>{{ report.broken_limits_label }}</td>
         <td>{{ report.deadline_label }}</td>
         <td>{{ report.due_at or "" }}</td>
+        <td>{{ report.total_cost_label }}</td>
         <td>{{ report.status or "" }}</td>
       </tr>
       {% endfor %}
@@ -47,6 +49,7 @@
         <th>Broken limits</th>
         <th>Deadline</th>
         <th>Due</th>
+        <th>Cost</th>
         <th>Status</th>
       </tr>
     </thead>
@@ -58,6 +61,7 @@
         <td>{{ report.broken_limits_label }}</td>
         <td>{{ report.deadline_label }}</td>
         <td>{{ report.due_at or "" }}</td>
+        <td>{{ report.total_cost_label }}</td>
         <td>{{ report.status or "" }}</td>
       </tr>
       {% endfor %}

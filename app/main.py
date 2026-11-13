@@ -11,21 +11,37 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.config import Settings, load_settings
+from app.cost import (
+    SAMPLE_INPUT_USD_PER_MILLION,
+    SAMPLE_OUTPUT_USD_PER_MILLION,
+    configured_rate,
+    store_cost,
+)
 from app.db import (
     ConsoleReport,
+    TraceStep,
     approve_report,
     insert_report,
     list_console_reports,
+    list_trace_steps,
     open_database,
     read_console_report,
     read_created_at,
     save_model_pipeline,
+    save_trace,
     update_verdict,
 )
 from app.facts import ReportFacts
 from app.limits import check_limits
 from app.model_client import ModelClient, build_model_client
 from app.pipeline import run_pipeline
+from app.trace import (
+    LIMITS_AND_VERDICT,
+    REPORT_SAVED,
+    PricedStep,
+    code_step,
+    price_steps,
+)
 
 _TEMPLATES = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
 
@@ -116,7 +132,7 @@ def create_app() -> FastAPI:
     @app.get("/console/{report_id}")
     def console_report(request: Request, report_id: int) -> HTMLResponse:
         try:
-            report = _load_console_report(request.app.state.settings, report_id)
+            report, steps = _load_report_page(request.app.state.settings, report_id)
         except LookupError:
             return _TEMPLATES.TemplateResponse(
                 request,
@@ -124,7 +140,7 @@ def create_app() -> FastAPI:
                 {},
                 status_code=404,
             )
-        return _report_page(request, report)
+        return _report_page(request, report, steps)
 
     @app.post("/console/{report_id}/approve")
     def approve(
@@ -133,7 +149,7 @@ def create_app() -> FastAPI:
         approver_name: str = Form(""),
     ) -> HTMLResponse:
         try:
-            report = _load_console_report(request.app.state.settings, report_id)
+            report, steps = _load_report_page(request.app.state.settings, report_id)
         except LookupError:
             return _TEMPLATES.TemplateResponse(
                 request,
@@ -142,11 +158,12 @@ def create_app() -> FastAPI:
                 status_code=404,
             )
         if report.status == "approved":
-            return _report_page(request, report)
+            return _report_page(request, report, steps)
         if report.status != "pending_approval" or not report.briefing:
             return _report_page(
                 request,
                 report,
+                steps,
                 approve_error="This report cannot be approved.",
                 approver_name=approver_name,
                 status_code=400,
@@ -155,6 +172,7 @@ def create_app() -> FastAPI:
             return _report_page(
                 request,
                 report,
+                steps,
                 approve_error="Name is blank.",
                 approver_name=approver_name,
                 status_code=400,
@@ -164,8 +182,8 @@ def create_app() -> FastAPI:
             report_id,
             approver_name.strip(),
         )
-        report = _load_console_report(request.app.state.settings, report_id)
-        return _report_page(request, report)
+        report, steps = _load_report_page(request.app.state.settings, report_id)
+        return _report_page(request, report, steps)
 
     return app
 
@@ -173,6 +191,7 @@ def create_app() -> FastAPI:
 def _report_page(
     request: Request,
     report: ConsoleReport,
+    steps: list[TraceStep],
     *,
     approve_error: str = "",
     approver_name: str = "",
@@ -183,6 +202,7 @@ def _report_page(
         "console_report.html",
         {
             "report": report,
+            "steps": steps,
             "approve_error": approve_error,
             "approver_name": approver_name,
         },
@@ -294,6 +314,10 @@ def _save_filing(
             broken_limits=checked.broken_limits,
         )
         connection.commit()
+        recorded = [
+            code_step(REPORT_SAVED, detail="Saved."),
+            code_step(LIMITS_AND_VERDICT, detail=f"Verdict {checked.verdict}."),
+        ]
         result = run_pipeline(
             model_client,
             ReportFacts(
@@ -306,6 +330,18 @@ def _save_filing(
                 verdict=checked.verdict,
                 broken_limits=checked.broken_limits,
                 filed_at=filed_at,
+            ),
+        )
+        recorded.extend(result.steps)
+        priced, total = price_steps(
+            recorded,
+            input_usd_per_million=configured_rate(
+                settings.input_usd_per_million,
+                default=SAMPLE_INPUT_USD_PER_MILLION,
+            ),
+            output_usd_per_million=configured_rate(
+                settings.output_usd_per_million,
+                default=SAMPLE_OUTPUT_USD_PER_MILLION,
             ),
         )
         save_model_pipeline(
@@ -330,6 +366,7 @@ def _save_filing(
             last_review_comment=result.last_review_comment,
             status=result.status,
         )
+        save_trace(connection, report_id, _stored_steps(priced), store_cost(total))
         connection.commit()
         return report_id
 
@@ -350,9 +387,30 @@ def _load_console_reports(settings: Settings) -> list[ConsoleReport]:
         return list_console_reports(connection)
 
 
-def _load_console_report(settings: Settings, report_id: int) -> ConsoleReport:
+def _load_report_page(
+    settings: Settings,
+    report_id: int,
+) -> tuple[ConsoleReport, list[TraceStep]]:
     with closing(open_database(_database_path(settings))) as connection:
-        return read_console_report(connection, report_id)
+        report = read_console_report(connection, report_id)
+        return report, list_trace_steps(connection, report_id)
+
+
+def _stored_steps(priced: tuple[PricedStep, ...]) -> list[TraceStep]:
+    return [
+        TraceStep(
+            order=step.order,
+            name=step.name,
+            kind=step.kind,
+            round_number=step.round_number,
+            input_tokens=step.input_tokens,
+            output_tokens=step.output_tokens,
+            cost=store_cost(step.cost),
+            outcome=step.outcome,
+            detail=step.detail,
+        )
+        for step in priced
+    ]
 
 
 app = create_app()
