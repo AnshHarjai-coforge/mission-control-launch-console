@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Report {{ report.id }}</title>
+</head>
+<body>
+  <h1>Report {{ report.id }}</h1>
+  <p><a href="/console">Console</a></p>
+  <p>Name: {{ report.name }}</p>
+  <p>Station: {{ report.station }}</p>
+  <p>Wind: {{ report.wind }}</p>
+  <p>Temperature: {{ report.temperature }}</p>
+  <p>Fuel: {{ report.fuel }}</p>
+  <p>Note: {{ report.note }}</p>
+  <p>Verdict: {{ report.verdict }}</p>
+  <p>Broken limits: {{ report.broken_limits_label }}</p>
+  <p>Deadline: {{ report.deadline_label }}</p>
+  <p>Due: {{ report.due_at or "" }}</p>
+</body>
+</html>

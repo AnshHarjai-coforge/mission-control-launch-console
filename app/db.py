@@ -5,6 +5,7 @@ as text so a decimal such as 25.1 round-trips exactly. Columns that later
 branches fill in are created here and left unset.
 """
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -93,6 +94,33 @@ class FiledReport:
     note: str
 
 
+@dataclass(frozen=True)
+class ConsoleReport:
+    id: int
+    name: str
+    station: str
+    wind: str
+    temperature: str
+    fuel: str
+    note: str
+    verdict: str | None
+    broken_limits: tuple[str, ...]
+    deadline_minutes: int | None
+    due_at: str | None
+
+    @property
+    def broken_limits_label(self) -> str:
+        if not self.broken_limits:
+            return "none"
+        return ", ".join(self.broken_limits)
+
+    @property
+    def deadline_label(self) -> str:
+        if self.deadline_minutes is None:
+            return ""
+        return f"{self.deadline_minutes} minutes"
+
+
 def open_database(path: str | Path | None = None) -> sqlite3.Connection:
     """Open the database, creating the parent folder and tables if needed.
 
@@ -116,8 +144,13 @@ def insert_report(
     temperature: Decimal | str | float,
     fuel: Decimal | str | float,
     note: str,
+    commit: bool = True,
 ) -> int:
-    """Insert the six filed fields and leave every other column unset."""
+    """Insert the six filed fields and leave every other column unset.
+
+    Pass commit=False when the caller still needs to update this row in the
+    same transaction.
+    """
     cursor = connection.execute(
         """
         INSERT INTO reports (created_at, name, station, wind, temperature, fuel, note)
@@ -133,10 +166,11 @@ def insert_report(
             note,
         ),
     )
-    connection.commit()
     report_id = cursor.lastrowid
     if report_id is None:
         raise RuntimeError("SQLite did not return a report id")
+    if commit:
+        connection.commit()
     return report_id
 
 
@@ -161,6 +195,108 @@ def read_report(connection: sqlite3.Connection, report_id: int) -> FiledReport:
         fuel=Decimal(row["fuel"]),
         note=row["note"],
     )
+
+
+def read_created_at(connection: sqlite3.Connection, report_id: int) -> datetime:
+    """Return the UTC filing time stored for one report."""
+    row = connection.execute(
+        "SELECT created_at FROM reports WHERE id = ?",
+        (report_id,),
+    ).fetchone()
+    if row is None:
+        raise LookupError(f"No report with id {report_id}")
+    return datetime.fromisoformat(row["created_at"])
+
+
+def update_launch_verdict(
+    connection: sqlite3.Connection,
+    report_id: int,
+    *,
+    verdict: str,
+    broken_limits: tuple[str, ...],
+    model_seriousness: str,
+    deadline_seriousness: str,
+    deadline_minutes: int,
+    due_at: datetime,
+) -> None:
+    """Store the limit check and the deadline on one saved report."""
+    cursor = connection.execute(
+        """
+        UPDATE reports
+        SET verdict = ?,
+            broken_limits = ?,
+            model_seriousness = ?,
+            deadline_seriousness = ?,
+            deadline_minutes = ?,
+            due_at = ?
+        WHERE id = ?
+        """,
+        (
+            verdict,
+            json.dumps(list(broken_limits)),
+            model_seriousness,
+            deadline_seriousness,
+            deadline_minutes,
+            due_at.isoformat(),
+            report_id,
+        ),
+    )
+    if cursor.rowcount != 1:
+        raise LookupError(f"No report with id {report_id}")
+
+
+def list_console_reports(connection: sqlite3.Connection) -> list[ConsoleReport]:
+    """Return saved reports, newest filing first."""
+    rows = connection.execute(
+        """
+        SELECT id, name, station, wind, temperature, fuel, note,
+               verdict, broken_limits, deadline_minutes, due_at
+        FROM reports
+        ORDER BY created_at DESC, id DESC
+        """
+    ).fetchall()
+    return [_console_report(row) for row in rows]
+
+
+def read_console_report(connection: sqlite3.Connection, report_id: int) -> ConsoleReport:
+    """Read one report for the console detail page."""
+    row = connection.execute(
+        """
+        SELECT id, name, station, wind, temperature, fuel, note,
+               verdict, broken_limits, deadline_minutes, due_at
+        FROM reports
+        WHERE id = ?
+        """,
+        (report_id,),
+    ).fetchone()
+    if row is None:
+        raise LookupError(f"No report with id {report_id}")
+    return _console_report(row)
+
+
+def _console_report(row: sqlite3.Row) -> ConsoleReport:
+    return ConsoleReport(
+        id=row["id"],
+        name=row["name"],
+        station=row["station"],
+        wind=row["wind"],
+        temperature=row["temperature"],
+        fuel=row["fuel"],
+        note=row["note"],
+        verdict=row["verdict"],
+        broken_limits=_parse_broken_limits(row["broken_limits"]),
+        deadline_minutes=row["deadline_minutes"],
+        due_at=row["due_at"],
+    )
+
+
+def _parse_broken_limits(stored: str | None) -> tuple[str, ...]:
+    if stored is None or stored == "":
+        return ()
+    parsed = json.loads(stored)
+    if not isinstance(parsed, list) or any(not isinstance(item, str) for item in parsed):
+        raise ValueError("Broken limits must be a list of names")
+    return tuple(parsed)
 
 
 def _store_decimal(value: Decimal | str | float) -> str:

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Console</title>
+</head>
+<body>
+  <h1>Console</h1>
+  <p><a href="/">File a report</a></p>
+  {% if reports %}
+  <table>
+    <thead>
+      <tr>
+        <th>Station</th>
+        <th>Verdict</th>
+        <th>Broken limits</th>
+        <th>Deadline</th>
+        <th>Due</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for report in reports %}
+      <tr>
+        <td><a href="/console/{{ report.id }}">{{ report.station }}</a></td>
+        <td>{{ report.verdict }}</td>
+        <td>{{ report.broken_limits_label }}</td>
+        <td>{{ report.deadline_label }}</td>
+        <td>{{ report.due_at or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No reports.</p>
+  {% endif %}
+</body>
+</html>
