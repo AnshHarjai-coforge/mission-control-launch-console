@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -284,4 +285,4 @@ def _assert_default_pipeline(row) -> None:
     assert row["status"] == "pending_approval"
     assert row["approved_at"] is None
     assert row["approver_name"] is None
-    assert row["total_cost"] is None
+    assert Decimal(row["total_cost"]) > 0

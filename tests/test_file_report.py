@@ -60,7 +60,8 @@ def test_valid_report_is_saved_and_readable_from_a_new_connection(monkeypatch, t
     assert f'href="/console/{report.id}"' in response.text
     _assert_no_go_for_wind(row)
     _assert_default_pipeline(row)
-    _assert_no_trace_steps(database_path)
+    assert _trace_names(database_path)[0] == "Report saved"
+    assert "Waiting for the Flight Director" in _trace_names(database_path)
     assert client.app.state.settings.azure_foundry_api_key == ""
 
 
@@ -360,16 +361,18 @@ def _assert_default_pipeline(row) -> None:
     assert row["status"] == "pending_approval"
     assert row["approved_at"] is None
     assert row["approver_name"] is None
-    assert row["total_cost"] is None
+    assert Decimal(row["total_cost"]) > 0
 
 
-def _assert_no_trace_steps(database_path: Path) -> None:
+def _trace_names(database_path: Path) -> list[str]:
     connection = open_database(database_path)
     try:
-        count = connection.execute("SELECT COUNT(*) AS n FROM trace_steps").fetchone()["n"]
+        rows = connection.execute(
+            "SELECT name FROM trace_steps ORDER BY step_order, id"
+        ).fetchall()
     finally:
         connection.close()
-    assert count == 0
+    return [row["name"] for row in rows]
 
 
 def _assert_no_go_for_wind(row) -> None:
