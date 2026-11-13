@@ -15,7 +15,40 @@
   <p>Note: {{ report.note }}</p>
   <p>Verdict: {{ report.verdict }}</p>
   <p>Broken limits: {{ report.broken_limits_label }}</p>
+  <p>Model said: {{ report.model_seriousness or "" }}</p>
+  <p>Deadline uses: {{ report.deadline_seriousness or "" }}</p>
   <p>Deadline: {{ report.deadline_label }}</p>
   <p>Due: {{ report.due_at or "" }}</p>
+  {% if report.category == "spam" %}
+  <p>Spam{% if report.hidden_instruction_reason %}: {{ report.hidden_instruction_reason }}{% endif %}</p>
+  {% endif %}
+  {% if report.missing_information %}
+  <p>Missing information: {{ report.missing_information_reason }}</p>
+  {% endif %}
+  {% if report.panic %}
+  <p>Panic: {{ report.panic_reason }}</p>
+  {% endif %}
+  {% if report.briefing %}
+  <p>Briefing: {{ report.briefing }}</p>
+  {% endif %}
+  <p>Status: {{ report.status or "" }}</p>
+  {% if report.status == "approved" %}
+  <p>Approved by: {{ report.approver_name }}</p>
+  <p>Approved at: {{ report.approved_at }}</p>
+  {% endif %}
+  {% if report.status == "pending_approval" and report.briefing %}
+  <form method="post" action="/console/{{ report.id }}/approve">
+    <p>
+      <label for="approver_name">Name</label>
+      <input id="approver_name" name="approver_name" type="text" value="{{ approver_name }}">
+      {% if approve_error %}
+      <span>{{ approve_error }}</span>
+      {% endif %}
+    </p>
+    <button type="submit">Approve</button>
+  </form>
+  {% elif approve_error %}
+  <p>{{ approve_error }}</p>
+  {% endif %}
 </body>
 </html>

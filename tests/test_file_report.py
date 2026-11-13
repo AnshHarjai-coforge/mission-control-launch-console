@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.db import open_database, read_report
 from app.main import create_app
+from app.model_client import DEFAULT_BRIEFING_SUMMARY, DEFAULT_CHECK_REASON
 
 _ENV_NAMES = (
     "DATABASE_PATH",
@@ -22,24 +23,6 @@ _ENV_NAMES = (
 
 _FIELDS = ("name", "station", "wind", "temperature", "fuel", "note")
 _READING_FIELDS = ("wind", "temperature", "fuel")
-_FILED_COLUMNS = {
-    "id",
-    "created_at",
-    "name",
-    "station",
-    "wind",
-    "temperature",
-    "fuel",
-    "note",
-}
-_VERDICT_COLUMNS = {
-    "verdict",
-    "broken_limits",
-    "model_seriousness",
-    "deadline_seriousness",
-    "deadline_minutes",
-    "due_at",
-}
 
 
 def test_filing_page_lists_every_field(monkeypatch, tmp_path):
@@ -76,7 +59,8 @@ def test_valid_report_is_saved_and_readable_from_a_new_connection(monkeypatch, t
     assert row["fuel"] == "99.5"
     assert f'href="/console/{report.id}"' in response.text
     _assert_no_go_for_wind(row)
-    _assert_pipeline_columns_unset(row)
+    _assert_default_pipeline(row)
+    _assert_no_trace_steps(database_path)
     assert client.app.state.settings.azure_foundry_api_key == ""
 
 
@@ -99,7 +83,7 @@ def test_wind_outside_the_launch_limit_is_saved_as_no_go(monkeypatch, tmp_path):
     assert report.note == payload["note"]
     assert row["wind"] == "40"
     _assert_no_go_for_wind(row)
-    _assert_pipeline_columns_unset(row)
+    _assert_default_pipeline(row)
 
 
 def test_maximum_lengths_are_saved(monkeypatch, tmp_path):
@@ -122,7 +106,7 @@ def test_maximum_lengths_are_saved(monkeypatch, tmp_path):
     assert report.temperature == Decimal("18.5")
     assert report.fuel == Decimal("99.5")
     _assert_no_go_for_wind(row)
-    _assert_pipeline_columns_unset(row)
+    _assert_default_pipeline(row)
 
 
 @pytest.mark.parametrize("field", _FIELDS)
@@ -359,11 +343,33 @@ def _saved_rows(database_path: Path) -> list:
         connection.close()
 
 
-def _assert_pipeline_columns_unset(row) -> None:
-    for column, value in dict(row).items():
-        if column in _FILED_COLUMNS or column in _VERDICT_COLUMNS:
-            continue
-        assert value is None
+def _assert_default_pipeline(row) -> None:
+    assert row["vehicle_part"] == "weather"
+    assert row["vehicle_part_stand_in"] == 0
+    assert row["category"] == "report"
+    assert row["hidden_instruction"] == 0
+    assert row["hidden_instruction_reason"] == DEFAULT_CHECK_REASON
+    assert row["missing_information"] == 0
+    assert row["missing_information_reason"] == DEFAULT_CHECK_REASON
+    assert row["panic"] == 0
+    assert row["panic_reason"] == DEFAULT_CHECK_REASON
+    assert row["briefing"] == DEFAULT_BRIEFING_SUMMARY
+    assert row["rounds_run"] == 1
+    assert row["last_review_accepted"] == 1
+    assert row["last_review_comment"] == ""
+    assert row["status"] == "pending_approval"
+    assert row["approved_at"] is None
+    assert row["approver_name"] is None
+    assert row["total_cost"] is None
+
+
+def _assert_no_trace_steps(database_path: Path) -> None:
+    connection = open_database(database_path)
+    try:
+        count = connection.execute("SELECT COUNT(*) AS n FROM trace_steps").fetchone()["n"]
+    finally:
+        connection.close()
+    assert count == 0
 
 
 def _assert_no_go_for_wind(row) -> None:

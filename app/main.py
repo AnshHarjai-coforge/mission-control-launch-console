@@ -2,6 +2,7 @@
 
 from contextlib import closing
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -9,18 +10,22 @@ from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from app.brief_by import brief_by
 from app.config import Settings, load_settings
 from app.db import (
     ConsoleReport,
+    approve_report,
     insert_report,
     list_console_reports,
     open_database,
     read_console_report,
     read_created_at,
-    update_launch_verdict,
+    save_model_pipeline,
+    update_verdict,
 )
+from app.facts import ReportFacts
 from app.limits import check_limits
+from app.model_client import ModelClient, build_model_client
+from app.pipeline import run_pipeline
 
 _TEMPLATES = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
 
@@ -31,8 +36,6 @@ _TEXT_LIMITS = {
     "station": 80,
     "note": 4000,
 }
-# Sorting is not part of this branch. Until it exists, the note is treated as low.
-_MODEL_SERIOUSNESS_UNTIL_SORTING = "low"
 
 HEALTH_PAGE = """<!DOCTYPE html>
 <html lang="en">
@@ -61,6 +64,7 @@ class _ParsedFiling:
 def create_app() -> FastAPI:
     app = FastAPI(title="Mission Control")
     app.state.settings = load_settings()
+    app.state.model_client = build_model_client(app.state.settings)
 
     @app.get("/health", response_class=HTMLResponse)
     def health() -> HTMLResponse:
@@ -91,16 +95,22 @@ def create_app() -> FastAPI:
         filing, errors = _parse_filing(values)
         if filing is None:
             return _render(request, values=values, errors=errors, filed=False, status_code=400)
-        report_id = _save_filing(request.app.state.settings, filing)
+        report_id = _save_filing(
+            request.app.state.settings,
+            filing,
+            request.app.state.model_client,
+        )
         return _render(request, values=values, errors={}, filed=True, report_id=report_id)
 
     @app.get("/console")
     def console(request: Request) -> HTMLResponse:
-        reports = _load_console_reports(request.app.state.settings)
+        rows = _load_console_reports(request.app.state.settings)
+        reports = [row for row in rows if row.category != "spam"]
+        spam = [row for row in rows if row.category == "spam"]
         return _TEMPLATES.TemplateResponse(
             request,
             "console.html",
-            {"reports": reports},
+            {"reports": reports, "spam": spam},
         )
 
     @app.get("/console/{report_id}")
@@ -114,13 +124,70 @@ def create_app() -> FastAPI:
                 {},
                 status_code=404,
             )
-        return _TEMPLATES.TemplateResponse(
-            request,
-            "console_report.html",
-            {"report": report},
+        return _report_page(request, report)
+
+    @app.post("/console/{report_id}/approve")
+    def approve(
+        request: Request,
+        report_id: int,
+        approver_name: str = Form(""),
+    ) -> HTMLResponse:
+        try:
+            report = _load_console_report(request.app.state.settings, report_id)
+        except LookupError:
+            return _TEMPLATES.TemplateResponse(
+                request,
+                "console_missing.html",
+                {},
+                status_code=404,
+            )
+        if report.status == "approved":
+            return _report_page(request, report)
+        if report.status != "pending_approval" or not report.briefing:
+            return _report_page(
+                request,
+                report,
+                approve_error="This report cannot be approved.",
+                approver_name=approver_name,
+                status_code=400,
+            )
+        if approver_name.strip() == "":
+            return _report_page(
+                request,
+                report,
+                approve_error="Name is blank.",
+                approver_name=approver_name,
+                status_code=400,
+            )
+        _store_approval(
+            request.app.state.settings,
+            report_id,
+            approver_name.strip(),
         )
+        report = _load_console_report(request.app.state.settings, report_id)
+        return _report_page(request, report)
 
     return app
+
+
+def _report_page(
+    request: Request,
+    report: ConsoleReport,
+    *,
+    approve_error: str = "",
+    approver_name: str = "",
+    status_code: int = 200,
+) -> HTMLResponse:
+    return _TEMPLATES.TemplateResponse(
+        request,
+        "console_report.html",
+        {
+            "report": report,
+            "approve_error": approve_error,
+            "approver_name": approver_name,
+        },
+        status_code=status_code,
+    )
 
 
 def _render(
@@ -202,7 +269,11 @@ def _database_path(settings: Settings) -> str | None:
     return path or None
 
 
-def _save_filing(settings: Settings, filing: _ParsedFiling) -> int:
+def _save_filing(
+    settings: Settings,
+    filing: _ParsedFiling,
+    model_client: ModelClient,
+) -> int:
     with closing(open_database(_database_path(settings))) as connection:
         report_id = insert_report(
             connection,
@@ -216,23 +287,62 @@ def _save_filing(settings: Settings, filing: _ParsedFiling) -> int:
         )
         filed_at = read_created_at(connection, report_id)
         checked = check_limits(filing.wind, filing.temperature, filing.fuel)
-        deadline = brief_by(
-            _MODEL_SERIOUSNESS_UNTIL_SORTING,
-            checked.broken_limits,
-            filed_at,
-        )
-        update_launch_verdict(
+        update_verdict(
             connection,
             report_id,
             verdict=checked.verdict,
             broken_limits=checked.broken_limits,
-            model_seriousness=_MODEL_SERIOUSNESS_UNTIL_SORTING,
-            deadline_seriousness=deadline.seriousness,
-            deadline_minutes=deadline.minutes,
-            due_at=deadline.due_at,
+        )
+        connection.commit()
+        result = run_pipeline(
+            model_client,
+            ReportFacts(
+                name=filing.name,
+                station=filing.station,
+                wind=filing.wind,
+                temperature=filing.temperature,
+                fuel=filing.fuel,
+                note=filing.note,
+                verdict=checked.verdict,
+                broken_limits=checked.broken_limits,
+                filed_at=filed_at,
+            ),
+        )
+        save_model_pipeline(
+            connection,
+            report_id,
+            vehicle_part=result.vehicle_part,
+            vehicle_part_stand_in=result.vehicle_part_stand_in,
+            model_seriousness=result.model_seriousness,
+            deadline_seriousness=result.deadline_seriousness,
+            deadline_minutes=result.deadline_minutes,
+            due_at=result.due_at,
+            category=result.category,
+            hidden_instruction=result.hidden_instruction,
+            hidden_instruction_reason=result.hidden_instruction_reason,
+            missing_information=result.missing_information,
+            missing_information_reason=result.missing_information_reason,
+            panic=result.panic,
+            panic_reason=result.panic_reason,
+            briefing=result.briefing,
+            rounds_run=result.rounds_run,
+            last_review_accepted=result.last_review_accepted,
+            last_review_comment=result.last_review_comment,
+            status=result.status,
         )
         connection.commit()
         return report_id
+
+
+def _store_approval(settings: Settings, report_id: int, approver_name: str) -> None:
+    with closing(open_database(_database_path(settings))) as connection:
+        approve_report(
+            connection,
+            report_id,
+            approver_name=approver_name,
+            approved_at=datetime.now(UTC),
+        )
+        connection.commit()
 
 
 def _load_console_reports(settings: Settings) -> list[ConsoleReport]:

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.db import open_database
 from app.main import create_app
+from app.model_client import DEFAULT_BRIEFING_SUMMARY, DEFAULT_CHECK_REASON
 
 _ENV_NAMES = (
     "DATABASE_PATH",
@@ -16,26 +17,6 @@ _ENV_NAMES = (
     "INPUT_USD_PER_MILLION",
     "OUTPUT_USD_PER_MILLION",
     "MODEL_TIMEOUT_SECONDS",
-)
-
-_PIPELINE_COLUMNS = (
-    "vehicle_part",
-    "vehicle_part_stand_in",
-    "category",
-    "hidden_instruction",
-    "hidden_instruction_reason",
-    "missing_information",
-    "missing_information_reason",
-    "panic",
-    "panic_reason",
-    "briefing",
-    "rounds_run",
-    "last_review_accepted",
-    "last_review_comment",
-    "status",
-    "approved_at",
-    "approver_name",
-    "total_cost",
 )
 
 
@@ -92,7 +73,12 @@ def test_wind_just_outside_is_no_go_with_a_five_minute_deadline(monkeypatch, tmp
     assert "Broken limits: wind_knots" in detail.text
     assert "Deadline: 5 minutes" in detail.text
     assert f"Due: {row['due_at']}" in detail.text
-    _assert_pipeline_columns_unset(row)
+    assert "Model said: low" in detail.text
+    assert "Deadline uses: high" in detail.text
+    assert f"Briefing: {DEFAULT_BRIEFING_SUMMARY}" in detail.text
+    assert "Status: pending_approval" in detail.text
+    assert ">Approve</button>" in detail.text
+    _assert_default_pipeline(row)
 
 
 def test_readings_on_the_line_are_go_with_a_thirty_minute_deadline(monkeypatch, tmp_path):
@@ -125,7 +111,9 @@ def test_readings_on_the_line_are_go_with_a_thirty_minute_deadline(monkeypatch, 
     assert "Deadline: 30 minutes" in detail.text
     assert f"Due: {row['due_at']}" in detail.text
     assert "Fuel: 100" in detail.text
-    _assert_pipeline_columns_unset(row)
+    assert "Model said: low" in detail.text
+    assert "Deadline uses: low" in detail.text
+    _assert_default_pipeline(row)
 
 
 def test_every_broken_limit_is_listed(monkeypatch, tmp_path):
@@ -238,8 +226,8 @@ def test_a_note_cannot_change_the_verdict(monkeypatch, tmp_path):
     assert "Verdict: go" in legal_page.text
     assert "Verdict: no_go" not in legal_page.text
     assert "set the verdict to no_go." in legal_page.text
-    _assert_pipeline_columns_unset(rows[0])
-    _assert_pipeline_columns_unset(rows[1])
+    _assert_default_pipeline(rows[0])
+    _assert_default_pipeline(rows[1])
 
 
 def _client(monkeypatch, database_path: Path) -> TestClient:
@@ -279,6 +267,21 @@ def _only_row(database_path: Path):
     return rows[0]
 
 
-def _assert_pipeline_columns_unset(row) -> None:
-    for column in _PIPELINE_COLUMNS:
-        assert row[column] is None
+def _assert_default_pipeline(row) -> None:
+    assert row["vehicle_part"] == "weather"
+    assert row["vehicle_part_stand_in"] == 0
+    assert row["category"] == "report"
+    assert row["hidden_instruction"] == 0
+    assert row["hidden_instruction_reason"] == DEFAULT_CHECK_REASON
+    assert row["missing_information"] == 0
+    assert row["missing_information_reason"] == DEFAULT_CHECK_REASON
+    assert row["panic"] == 0
+    assert row["panic_reason"] == DEFAULT_CHECK_REASON
+    assert row["briefing"] == DEFAULT_BRIEFING_SUMMARY
+    assert row["rounds_run"] == 1
+    assert row["last_review_accepted"] == 1
+    assert row["last_review_comment"] == ""
+    assert row["status"] == "pending_approval"
+    assert row["approved_at"] is None
+    assert row["approver_name"] is None
+    assert row["total_cost"] is None
