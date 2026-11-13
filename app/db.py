@@ -107,6 +107,19 @@ class ConsoleReport:
     broken_limits: tuple[str, ...]
     deadline_minutes: int | None
     due_at: str | None
+    model_seriousness: str | None
+    deadline_seriousness: str | None
+    category: str | None
+    hidden_instruction: bool | None
+    hidden_instruction_reason: str | None
+    missing_information: bool | None
+    missing_information_reason: str | None
+    panic: bool | None
+    panic_reason: str | None
+    briefing: str | None
+    status: str | None
+    approver_name: str | None
+    approved_at: str | None
 
     @property
     def broken_limits_label(self) -> str:
@@ -208,36 +221,24 @@ def read_created_at(connection: sqlite3.Connection, report_id: int) -> datetime:
     return datetime.fromisoformat(row["created_at"])
 
 
-def update_launch_verdict(
+def update_verdict(
     connection: sqlite3.Connection,
     report_id: int,
     *,
     verdict: str,
     broken_limits: tuple[str, ...],
-    model_seriousness: str,
-    deadline_seriousness: str,
-    deadline_minutes: int,
-    due_at: datetime,
 ) -> None:
-    """Store the limit check and the deadline on one saved report."""
+    """Store the limit check. This is the only write of the verdict."""
     cursor = connection.execute(
         """
         UPDATE reports
         SET verdict = ?,
-            broken_limits = ?,
-            model_seriousness = ?,
-            deadline_seriousness = ?,
-            deadline_minutes = ?,
-            due_at = ?
+            broken_limits = ?
         WHERE id = ?
         """,
         (
             verdict,
             json.dumps(list(broken_limits)),
-            model_seriousness,
-            deadline_seriousness,
-            deadline_minutes,
-            due_at.isoformat(),
             report_id,
         ),
     )
@@ -245,12 +246,131 @@ def update_launch_verdict(
         raise LookupError(f"No report with id {report_id}")
 
 
+def save_model_pipeline(
+    connection: sqlite3.Connection,
+    report_id: int,
+    *,
+    vehicle_part: str | None,
+    vehicle_part_stand_in: bool | None,
+    model_seriousness: str | None,
+    deadline_seriousness: str | None,
+    deadline_minutes: int | None,
+    due_at: datetime | None,
+    category: str | None,
+    hidden_instruction: bool | None,
+    hidden_instruction_reason: str | None,
+    missing_information: bool | None,
+    missing_information_reason: str | None,
+    panic: bool | None,
+    panic_reason: str | None,
+    briefing: str | None,
+    rounds_run: int | None,
+    last_review_accepted: bool | None,
+    last_review_comment: str | None,
+    status: str | None,
+) -> None:
+    """Store sorting, checks, the deadline, and the briefing.
+
+    The statement does not mention the verdict or the broken limits.
+    """
+    cursor = connection.execute(
+        """
+        UPDATE reports
+        SET vehicle_part = ?,
+            vehicle_part_stand_in = ?,
+            model_seriousness = ?,
+            deadline_seriousness = ?,
+            deadline_minutes = ?,
+            due_at = ?,
+            category = ?,
+            hidden_instruction = ?,
+            hidden_instruction_reason = ?,
+            missing_information = ?,
+            missing_information_reason = ?,
+            panic = ?,
+            panic_reason = ?,
+            briefing = ?,
+            rounds_run = ?,
+            last_review_accepted = ?,
+            last_review_comment = ?,
+            status = ?
+        WHERE id = ?
+        """,
+        (
+            vehicle_part,
+            _bit(vehicle_part_stand_in),
+            model_seriousness,
+            deadline_seriousness,
+            deadline_minutes,
+            None if due_at is None else due_at.isoformat(),
+            category,
+            _bit(hidden_instruction),
+            hidden_instruction_reason,
+            _bit(missing_information),
+            missing_information_reason,
+            _bit(panic),
+            panic_reason,
+            briefing,
+            rounds_run,
+            _bit(last_review_accepted),
+            last_review_comment,
+            status,
+            report_id,
+        ),
+    )
+    if cursor.rowcount != 1:
+        raise LookupError(f"No report with id {report_id}")
+
+
+def approve_report(
+    connection: sqlite3.Connection,
+    report_id: int,
+    *,
+    approver_name: str,
+    approved_at: datetime,
+) -> str:
+    """Approve a briefing that is waiting. A second call does not replace the name.
+
+    Returns ``approved``, ``unchanged``, or ``rejected``. Only this function
+    sets the status to approved.
+    """
+    cursor = connection.execute(
+        """
+        UPDATE reports
+        SET status = 'approved',
+            approver_name = ?,
+            approved_at = ?
+        WHERE id = ?
+          AND status = 'pending_approval'
+          AND briefing IS NOT NULL
+          AND briefing != ''
+        """,
+        (approver_name, approved_at.isoformat(), report_id),
+    )
+    if cursor.rowcount == 1:
+        return "approved"
+    row = connection.execute(
+        "SELECT status FROM reports WHERE id = ?",
+        (report_id,),
+    ).fetchone()
+    if row is None:
+        raise LookupError(f"No report with id {report_id}")
+    if row["status"] == "approved":
+        return "unchanged"
+    return "rejected"
+
+
 def list_console_reports(connection: sqlite3.Connection) -> list[ConsoleReport]:
     """Return saved reports, newest filing first."""
     rows = connection.execute(
         """
         SELECT id, name, station, wind, temperature, fuel, note,
-               verdict, broken_limits, deadline_minutes, due_at
+               verdict, broken_limits, deadline_minutes, due_at,
+               model_seriousness, deadline_seriousness, category,
+               hidden_instruction, hidden_instruction_reason,
+               missing_information, missing_information_reason,
+               panic, panic_reason, briefing, status,
+               approver_name, approved_at
         FROM reports
         ORDER BY created_at DESC, id DESC
         """
@@ -263,7 +383,12 @@ def read_console_report(connection: sqlite3.Connection, report_id: int) -> Conso
     row = connection.execute(
         """
         SELECT id, name, station, wind, temperature, fuel, note,
-               verdict, broken_limits, deadline_minutes, due_at
+               verdict, broken_limits, deadline_minutes, due_at,
+               model_seriousness, deadline_seriousness, category,
+               hidden_instruction, hidden_instruction_reason,
+               missing_information, missing_information_reason,
+               panic, panic_reason, briefing, status,
+               approver_name, approved_at
         FROM reports
         WHERE id = ?
         """,
@@ -287,6 +412,19 @@ def _console_report(row: sqlite3.Row) -> ConsoleReport:
         broken_limits=_parse_broken_limits(row["broken_limits"]),
         deadline_minutes=row["deadline_minutes"],
         due_at=row["due_at"],
+        model_seriousness=row["model_seriousness"],
+        deadline_seriousness=row["deadline_seriousness"],
+        category=row["category"],
+        hidden_instruction=_flag(row["hidden_instruction"]),
+        hidden_instruction_reason=row["hidden_instruction_reason"],
+        missing_information=_flag(row["missing_information"]),
+        missing_information_reason=row["missing_information_reason"],
+        panic=_flag(row["panic"]),
+        panic_reason=row["panic_reason"],
+        briefing=row["briefing"],
+        status=row["status"],
+        approver_name=row["approver_name"],
+        approved_at=row["approved_at"],
     )
 
 
@@ -297,6 +435,18 @@ def _parse_broken_limits(stored: str | None) -> tuple[str, ...]:
     if not isinstance(parsed, list) or any(not isinstance(item, str) for item in parsed):
         raise ValueError("Broken limits must be a list of names")
     return tuple(parsed)
+
+
+def _flag(value: int | None) -> bool | None:
+    if value is None:
+        return None
+    return bool(value)
+
+
+def _bit(value: bool | None) -> int | None:
+    if value is None:
+        return None
+    return 1 if value else 0
 
 
 def _store_decimal(value: Decimal | str | float) -> str:

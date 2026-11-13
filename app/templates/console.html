@@ -7,6 +7,8 @@
 <body>
   <h1>Console</h1>
   <p><a href="/">File a report</a></p>
+  {% if reports or spam %}
+  <h2>Reports</h2>
   {% if reports %}
   <table>
     <thead>
@@ -16,6 +18,7 @@
         <th>Broken limits</th>
         <th>Deadline</th>
         <th>Due</th>
+        <th>Status</th>
       </tr>
     </thead>
     <tbody>
@@ -26,10 +29,43 @@
         <td>{{ report.broken_limits_label }}</td>
         <td>{{ report.deadline_label }}</td>
         <td>{{ report.due_at or "" }}</td>
+        <td>{{ report.status or "" }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  {% else %}
+  <p>None.</p>
+  {% endif %}
+  <h2>Spam</h2>
+  {% if spam %}
+  <table>
+    <thead>
+      <tr>
+        <th>Station</th>
+        <th>Verdict</th>
+        <th>Broken limits</th>
+        <th>Deadline</th>
+        <th>Due</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for report in spam %}
+      <tr>
+        <td><a href="/console/{{ report.id }}">{{ report.station }}</a></td>
+        <td>{{ report.verdict }}</td>
+        <td>{{ report.broken_limits_label }}</td>
+        <td>{{ report.deadline_label }}</td>
+        <td>{{ report.due_at or "" }}</td>
+        <td>{{ report.status or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No spam.</p>
+  {% endif %}
   {% else %}
   <p>No reports.</p>
   {% endif %}
