@@ -1,0 +1,32 @@
+{% macro table(rows) %}
+<div class="board-scroll">
+  <table class="board">
+    <thead>
+      <tr>
+        <th>Station</th>
+        <th>Part</th>
+        <th>Verdict</th>
+        <th>Broken limits</th>
+        <th>Deadline</th>
+        <th>Due</th>
+        <th>Cost</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for report in rows %}
+      <tr class="is-{{ report.verdict or 'open' }} st-{{ report.status or 'none' }}">
+        <td class="station"><a href="/console/{{ report.id }}">{{ report.station }}</a></td>
+        <td class="part">{{ report.vehicle_part or "" }}</td>
+        <td>{{ report.verdict }}</td>
+        <td>{{ report.broken_limits_label }}</td>
+        <td>{{ report.deadline_label }}</td>
+        <td class="due" title="{{ report.due_at or '' }}">{{ report.due_at | due_label }}</td>
+        <td>{{ report.total_cost_label }}</td>
+        <td>{{ report.status or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}

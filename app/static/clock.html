@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light">
+  <title>UTC</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #f4f5f7;
+      color: #1c2430;
+      color-scheme: light;
+    }
+    body { display: flex; align-items: center; }
+    p {
+      margin: 0;
+      font: 600 1.05rem/1.2 "Segoe UI", "Avenir Next", system-ui, sans-serif;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body>
+  <p id="time">--:--:-- UTC</p>
+  <script>
+    (function () {
+      var node = document.getElementById("time");
+      function pad(value) {
+        return String(value).padStart(2, "0");
+      }
+      function render() {
+        var now = new Date();
+        node.textContent =
+          now.getUTCFullYear() + "-" + pad(now.getUTCMonth() + 1) + "-" + pad(now.getUTCDate()) +
+          "  " + pad(now.getUTCHours()) + ":" + pad(now.getUTCMinutes()) + ":" + pad(now.getUTCSeconds()) +
+          " UTC";
+      }
+      render();
+      setInterval(render, 250);
+    })();
+  </script>
+</body>
+</html>

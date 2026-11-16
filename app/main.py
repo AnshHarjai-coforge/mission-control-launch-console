@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import Settings, load_settings
@@ -31,6 +32,7 @@ from app.db import (
     save_trace,
     update_verdict,
 )
+from app.display import board_tally, due_label, meter_width, utc_stamp
 from app.facts import ReportFacts
 from app.limits import check_limits
 from app.model_client import ModelClient, build_model_client
@@ -44,6 +46,9 @@ from app.trace import (
 )
 
 _TEMPLATES = Jinja2Templates(directory=Path(__file__).resolve().parent / "templates")
+_TEMPLATES.env.globals["meter_width"] = meter_width
+_TEMPLATES.env.globals["utc_stamp"] = utc_stamp
+_TEMPLATES.env.filters["due_label"] = due_label
 
 _FIELDS = ("name", "station", "wind", "temperature", "fuel", "note")
 _READING_FIELDS = ("wind", "temperature", "fuel")
@@ -52,20 +57,6 @@ _TEXT_LIMITS = {
     "station": 80,
     "note": 4000,
 }
-
-HEALTH_PAGE = """<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Mission Control</title>
-</head>
-<body>
-  <h1>Mission Control</h1>
-  <p>ok</p>
-</body>
-</html>
-"""
-
 
 @dataclass(frozen=True)
 class _ParsedFiling:
@@ -83,8 +74,8 @@ def create_app() -> FastAPI:
     app.state.model_client = build_model_client(app.state.settings)
 
     @app.get("/health", response_class=HTMLResponse)
-    def health() -> HTMLResponse:
-        return HTMLResponse(HEALTH_PAGE)
+    def health(request: Request) -> HTMLResponse:
+        return _TEMPLATES.TemplateResponse(request, "health.html", {"nav": ""})
 
     @app.get("/")
     def filing_form(request: Request) -> HTMLResponse:
@@ -126,7 +117,12 @@ def create_app() -> FastAPI:
         return _TEMPLATES.TemplateResponse(
             request,
             "console.html",
-            {"reports": reports, "spam": spam},
+            {
+                "reports": reports,
+                "spam": spam,
+                "tally": board_tally(reports, spam),
+                "nav": "console",
+            },
         )
 
     @app.get("/console/{report_id}")
@@ -137,7 +133,7 @@ def create_app() -> FastAPI:
             return _TEMPLATES.TemplateResponse(
                 request,
                 "console_missing.html",
-                {},
+                {"nav": "console"},
                 status_code=404,
             )
         return _report_page(request, report, steps)
@@ -154,7 +150,7 @@ def create_app() -> FastAPI:
             return _TEMPLATES.TemplateResponse(
                 request,
                 "console_missing.html",
-                {},
+                {"nav": "console"},
                 status_code=404,
             )
         if report.status == "approved":
@@ -185,6 +181,7 @@ def create_app() -> FastAPI:
         report, steps = _load_report_page(request.app.state.settings, report_id)
         return _report_page(request, report, steps)
 
+    _mount_static(app)
     return app
 
 
@@ -205,6 +202,7 @@ def _report_page(
             "steps": steps,
             "approve_error": approve_error,
             "approver_name": approver_name,
+            "nav": "console",
         },
         status_code=status_code,
     )
@@ -227,6 +225,7 @@ def _render(
             "errors": errors,
             "filed": filed,
             "report_id": report_id,
+            "nav": "file",
         },
         status_code=status_code,
     )
@@ -411,6 +410,11 @@ def _stored_steps(priced: tuple[PricedStep, ...]) -> list[TraceStep]:
         )
         for step in priced
     ]
+
+
+def _mount_static(app: FastAPI) -> None:
+    static_dir = Path(__file__).resolve().parent / "static"
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 app = create_app()

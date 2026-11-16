@@ -1,67 +1,99 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>File a report</title>
-</head>
-<body>
-  <h1>File a report</h1>
-  <p><a href="/console">Console</a></p>
+{% extends "base.html" %}
+{% block title %}File a report{% endblock %}
+{% block body_class %}page-file{% endblock %}
+{% block content %}
   {% if filed %}
-  <p>Report filed.</p>
-  <p><a href="/console/{{ report_id }}">Open this report</a></p>
-  <h2>Filed report</h2>
-  <p>Name: {{ values.name }}</p>
-  <p>Station: {{ values.station }}</p>
-  <p>Wind: {{ values.wind }}</p>
-  <p>Temperature: {{ values.temperature }}</p>
-  <p>Fuel: {{ values.fuel }}</p>
-  <p>Note: {{ values.note }}</p>
+  <section class="panel ticket">
+    <p class="ticket-title">Report filed.</p>
+    <p><a class="commit" href="/console/{{ report_id }}">Open this report</a></p>
+    <div class="ticket-grid">
+      <p>Name: {{ values.name }}</p>
+      <p>Station: {{ values.station }}</p>
+      <p>Wind: {{ values.wind }}</p>
+      <p>Temperature: {{ values.temperature }}</p>
+      <p>Fuel: {{ values.fuel }}</p>
+      <p>Note: {{ values.note }}</p>
+    </div>
+  </section>
   {% endif %}
-  <form method="post" action="/">
-    <p>
-      <label for="name">Name</label>
-      <input id="name" name="name" type="text" value="{{ values.name }}">
-      {% if errors["name"] %}
-      <span>{{ errors["name"] }}</span>
+  <header class="page-head">
+    <h1>File a report</h1>
+    <p class="lede">Six fields from the station. A reading outside the launch window is still a real report.</p>
+  </header>
+  <div class="layout-file">
+    <section class="panel">
+      {% if filed %}
+      <h2 class="again">File another</h2>
       {% endif %}
-    </p>
-    <p>
-      <label for="station">Station</label>
-      <input id="station" name="station" type="text" value="{{ values.station }}">
-      {% if errors["station"] %}
-      <span>{{ errors["station"] }}</span>
+      {% if errors %}
+      <p class="banner" role="alert">Correct the named fields. Nothing was saved.</p>
       {% endif %}
-    </p>
-    <p>
-      <label for="wind">Wind</label>
-      <input id="wind" name="wind" type="text" value="{{ values.wind }}">
-      {% if errors["wind"] %}
-      <span>{{ errors["wind"] }}</span>
-      {% endif %}
-    </p>
-    <p>
-      <label for="temperature">Temperature</label>
-      <input id="temperature" name="temperature" type="text" value="{{ values.temperature }}">
-      {% if errors["temperature"] %}
-      <span>{{ errors["temperature"] }}</span>
-      {% endif %}
-    </p>
-    <p>
-      <label for="fuel">Fuel</label>
-      <input id="fuel" name="fuel" type="text" value="{{ values.fuel }}">
-      {% if errors["fuel"] %}
-      <span>{{ errors["fuel"] }}</span>
-      {% endif %}
-    </p>
-    <p>
-      <label for="note">Note</label>
-      <textarea id="note" name="note">{{ values.note }}</textarea>
-      {% if errors["note"] %}
-      <span>{{ errors["note"] }}</span>
-      {% endif %}
-    </p>
-    <button type="submit">File report</button>
-  </form>
-</body>
-</html>
+      <form method="post" action="/" autocomplete="off">
+        <div class="fields">
+          <div class="field{% if errors['name'] %} is-bad{% endif %}">
+            <label for="name">Name</label>
+            <input id="name" name="name" type="text" maxlength="80" required value="{{ values.name }}" autocomplete="name" placeholder="Who filed it">
+            {% if errors["name"] %}
+            <span class="fault">{{ errors["name"] }}</span>
+            {% endif %}
+          </div>
+          <div class="field{% if errors['station'] %} is-bad{% endif %}">
+            <label for="station">Station</label>
+            <input id="station" name="station" type="text" maxlength="80" required value="{{ values.station }}" placeholder="Which console">
+            {% if errors["station"] %}
+            <span class="fault">{{ errors["station"] }}</span>
+            {% endif %}
+          </div>
+          <div class="readings">
+            <div class="field{% if errors['wind'] %} is-bad{% endif %}">
+              <label for="wind">Wind</label>
+              <input id="wind" name="wind" type="text" inputmode="decimal" required value="{{ values.wind }}" placeholder="knots" spellcheck="false" autocomplete="off">
+              {% if errors["wind"] %}
+              <span class="fault">{{ errors["wind"] }}</span>
+              {% endif %}
+            </div>
+            <div class="field{% if errors['temperature'] %} is-bad{% endif %}">
+              <label for="temperature">Temperature</label>
+              <input id="temperature" name="temperature" type="text" inputmode="decimal" required value="{{ values.temperature }}" placeholder="degrees C" spellcheck="false" autocomplete="off">
+              {% if errors["temperature"] %}
+              <span class="fault">{{ errors["temperature"] }}</span>
+              {% endif %}
+            </div>
+            <div class="field{% if errors['fuel'] %} is-bad{% endif %}">
+              <label for="fuel">Fuel</label>
+              <input id="fuel" name="fuel" type="text" inputmode="decimal" required value="{{ values.fuel }}" placeholder="percent" spellcheck="false" autocomplete="off">
+              {% if errors["fuel"] %}
+              <span class="fault">{{ errors["fuel"] }}</span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="field field-wide{% if errors['note'] %} is-bad{% endif %}">
+            <label for="note">Note</label>
+            <textarea id="note" name="note" maxlength="4000" required placeholder="What happened, in your own words.">{{ values.note }}</textarea>
+            {% if errors["note"] %}
+            <span class="fault">{{ errors["note"] }}</span>
+            {% endif %}
+          </div>
+          <div class="field-wide actions">
+            <button class="commit" type="submit">File report</button>
+          </div>
+        </div>
+      </form>
+    </section>
+    <aside class="panel rail">
+      <h2>Launch window</h2>
+      <ul class="limits-key">
+        <li><span>Wind</span><strong>25 kt or less</strong></li>
+        <li><span>Temperature</span><strong>4 °C or more</strong></li>
+        <li><span>Fuel</span><strong>98 to 100%</strong></li>
+      </ul>
+      <h2>After you file</h2>
+      <ol class="sequence">
+        <li>The report is saved.</li>
+        <li>Code sets the verdict from the three readings.</li>
+        <li>The model drafts a briefing.</li>
+        <li>A person approves it.</li>
+      </ol>
+    </aside>
+  </div>
+{% endblock %}

@@ -1,77 +1,47 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Console</title>
-</head>
-<body>
-  <h1>Console</h1>
-  <p><a href="/">File a report</a></p>
+{% extends "base.html" %}
+{% from "_board.html" import table %}
+{% block title %}Console{% endblock %}
+{% block body_class %}page-console{% endblock %}
+{% block content %}
+  <header class="page-head">
+    <h1>Console</h1>
+    <p class="lede">Newest filing first. Injected notes sit on the spam board and can still be approved.</p>
+  </header>
+  <ul class="tally">
+    <li class="tally-go"><span>Go</span><strong>{{ tally.go }}</strong></li>
+    <li class="tally-nogo"><span>No-go</span><strong>{{ tally.nogo }}</strong></li>
+    <li class="tally-wait"><span>Awaiting</span><strong>{{ tally.awaiting }}</strong></li>
+    <li class="tally-spam"><span>Spam</span><strong>{{ tally.spam }}</strong></li>
+  </ul>
   {% if reports or spam %}
-  <h2>Reports</h2>
-  {% if reports %}
-  <table>
-    <thead>
-      <tr>
-        <th>Station</th>
-        <th>Verdict</th>
-        <th>Broken limits</th>
-        <th>Deadline</th>
-        <th>Due</th>
-        <th>Cost</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for report in reports %}
-      <tr>
-        <td><a href="/console/{{ report.id }}">{{ report.station }}</a></td>
-        <td>{{ report.verdict }}</td>
-        <td>{{ report.broken_limits_label }}</td>
-        <td>{{ report.deadline_label }}</td>
-        <td>{{ report.due_at or "" }}</td>
-        <td>{{ report.total_cost_label }}</td>
-        <td>{{ report.status or "" }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <section class="panel sector">
+    <div class="sector-head">
+      <h2>Reports</h2>
+      <span class="count">{{ reports|length }}</span>
+    </div>
+    {% if reports %}
+    {{ table(reports) }}
+    {% else %}
+    <p class="empty">None.</p>
+    {% endif %}
+  </section>
+  <section class="panel sector sector-spam">
+    <div class="sector-head">
+      <h2>Spam</h2>
+      <span class="count">{{ spam|length }}</span>
+    </div>
+    <p class="sector-note">An injected note stays in review. It does not change the verdict.</p>
+    {% if spam %}
+    {{ table(spam) }}
+    {% else %}
+    <p class="empty">No spam.</p>
+    {% endif %}
+  </section>
   {% else %}
-  <p>None.</p>
+  <section class="panel empty-board">
+    <p class="empty-title">No reports.</p>
+    <p class="empty-copy">File a report when a station has something to say. The verdict comes from the three readings.</p>
+    <a class="commit" href="/">File a report</a>
+  </section>
   {% endif %}
-  <h2>Spam</h2>
-  {% if spam %}
-  <table>
-    <thead>
-      <tr>
-        <th>Station</th>
-        <th>Verdict</th>
-        <th>Broken limits</th>
-        <th>Deadline</th>
-        <th>Due</th>
-        <th>Cost</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for report in spam %}
-      <tr>
-        <td><a href="/console/{{ report.id }}">{{ report.station }}</a></td>
-        <td>{{ report.verdict }}</td>
-        <td>{{ report.broken_limits_label }}</td>
-        <td>{{ report.deadline_label }}</td>
-        <td>{{ report.due_at or "" }}</td>
-        <td>{{ report.total_cost_label }}</td>
-        <td>{{ report.status or "" }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p>No spam.</p>
-  {% endif %}
-  {% else %}
-  <p>No reports.</p>
-  {% endif %}
-</body>
-</html>
+{% endblock %}
