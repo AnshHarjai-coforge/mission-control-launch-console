@@ -113,6 +113,9 @@ class ConsoleReport:
     model_seriousness: str | None
     deadline_seriousness: str | None
     category: str | None
+    vehicle_part: str | None
+    vehicle_part_stand_in: bool | None
+    rounds_run: int | None
     hidden_instruction: bool | None
     hidden_instruction_reason: str | None
     missing_information: bool | None
@@ -471,6 +474,7 @@ def list_console_reports(connection: sqlite3.Connection) -> list[ConsoleReport]:
         SELECT id, name, station, wind, temperature, fuel, note,
                verdict, broken_limits, deadline_minutes, due_at,
                model_seriousness, deadline_seriousness, category,
+               vehicle_part, vehicle_part_stand_in, rounds_run,
                hidden_instruction, hidden_instruction_reason,
                missing_information, missing_information_reason,
                panic, panic_reason, briefing, status,
@@ -489,6 +493,7 @@ def read_console_report(connection: sqlite3.Connection, report_id: int) -> Conso
         SELECT id, name, station, wind, temperature, fuel, note,
                verdict, broken_limits, deadline_minutes, due_at,
                model_seriousness, deadline_seriousness, category,
+               vehicle_part, vehicle_part_stand_in, rounds_run,
                hidden_instruction, hidden_instruction_reason,
                missing_information, missing_information_reason,
                panic, panic_reason, briefing, status,
@@ -519,6 +524,9 @@ def _console_report(row: sqlite3.Row) -> ConsoleReport:
         model_seriousness=row["model_seriousness"],
         deadline_seriousness=row["deadline_seriousness"],
         category=row["category"],
+        vehicle_part=row["vehicle_part"],
+        vehicle_part_stand_in=_flag(row["vehicle_part_stand_in"]),
+        rounds_run=row["rounds_run"],
         hidden_instruction=_flag(row["hidden_instruction"]),
         hidden_instruction_reason=row["hidden_instruction_reason"],
         missing_information=_flag(row["missing_information"]),

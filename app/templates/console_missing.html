@@ -1,11 +1,10 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Report not found</title>
-</head>
-<body>
-  <h1>Report not found</h1>
-  <p><a href="/console">Console</a></p>
-</body>
-</html>
+{% extends "base.html" %}
+{% block title %}Report not found{% endblock %}
+{% block body_class %}page-missing{% endblock %}
+{% block content %}
+  <section class="panel empty-board">
+    <h1>Report not found</h1>
+    <p class="empty-copy">That number is not on this console.</p>
+    <a class="commit" href="/console">Console</a>
+  </section>
+{% endblock %}

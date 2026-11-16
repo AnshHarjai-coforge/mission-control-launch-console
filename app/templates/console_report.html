@@ -1,77 +1,141 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Report {{ report.id }}</title>
-  <style>
-    .step-card {
-      border: 1px solid #999;
-      margin: 0.75rem 0;
-      padding: 0.75rem 1rem;
-    }
-  </style>
-</head>
-<body>
-  <h1>Report {{ report.id }}</h1>
-  <p><a href="/console">Console</a></p>
-  <p>Name: {{ report.name }}</p>
-  <p>Station: {{ report.station }}</p>
-  <p>Wind: {{ report.wind }}</p>
-  <p>Temperature: {{ report.temperature }}</p>
-  <p>Fuel: {{ report.fuel }}</p>
-  <p>Note: {{ report.note }}</p>
-  <p>Verdict: {{ report.verdict }}</p>
-  <p>Broken limits: {{ report.broken_limits_label }}</p>
-  <p>Model said: {{ report.model_seriousness or "" }}</p>
-  <p>Deadline uses: {{ report.deadline_seriousness or "" }}</p>
-  <p>Deadline: {{ report.deadline_label }}</p>
-  <p>Due: {{ report.due_at or "" }}</p>
+{% extends "base.html" %}
+{% block title %}Report {{ report.id }}{% endblock %}
+{% block body_class %}page-report{% endblock %}
+{% block content %}
+<article class="dossier is-{{ report.verdict or 'open' }} st-{{ report.status or 'none' }}">
   {% if report.category == "spam" %}
-  <p>Spam{% if report.hidden_instruction_reason %}: {{ report.hidden_instruction_reason }}{% endif %}</p>
+  <div class="spam-banner">
+    <p class="flag">Spam{% if report.hidden_instruction_reason %}: {{ report.hidden_instruction_reason }}{% endif %}</p>
+    <p class="spam-note">The verdict stays with the readings. A person can still approve this report.</p>
+  </div>
   {% endif %}
-  {% if report.missing_information %}
-  <p>Missing information: {{ report.missing_information_reason }}</p>
-  {% endif %}
-  {% if report.panic %}
-  <p>Panic: {{ report.panic_reason }}</p>
-  {% endif %}
-  {% if report.briefing %}
-  <p>Briefing: {{ report.briefing }}</p>
-  {% endif %}
-  <p>Total cost: {{ report.total_cost_label }}</p>
-  <h2>Steps</h2>
-  {% for step in steps %}
-  <article class="step-card">
-    <h3>{{ step.name }}</h3>
-    <p>Kind: {{ step.kind_label }}</p>
-    <p>Input tokens: {{ step.input_tokens_label }}</p>
-    <p>Output tokens: {{ step.output_tokens_label }}</p>
-    <p>Cost: {{ step.cost_label }}</p>
-    {% if step.outcome == "error" %}
-    <p>Failed: {{ step.detail }}</p>
-    {% elif step.detail %}
-    <p>{{ step.detail }}</p>
-    {% endif %}
-  </article>
-  {% endfor %}
-  <p>Status: {{ report.status or "" }}</p>
-  {% if report.status == "approved" %}
-  <p>Approved by: {{ report.approver_name }}</p>
-  <p>Approved at: {{ report.approved_at }}</p>
-  {% endif %}
-  {% if report.status == "pending_approval" and report.briefing %}
-  <form method="post" action="/console/{{ report.id }}/approve">
-    <p>
-      <label for="approver_name">Name</label>
-      <input id="approver_name" name="approver_name" type="text" value="{{ approver_name }}">
-      {% if approve_error %}
-      <span>{{ approve_error }}</span>
+  <header class="page-head">
+    <p class="crumb"><a href="/console">Console</a></p>
+    <div class="title-row">
+      <h1>Report {{ report.id }}</h1>
+      <p class="badge">{% if report.verdict == "go" %}Go{% elif report.verdict == "no_go" %}No-go{% elif report.verdict %}{{ report.verdict }}{% else %}Hold{% endif %}</p>
+    </div>
+    <p class="verdict-line">Verdict: {{ report.verdict }}</p>
+  </header>
+  <div class="layout-detail">
+    <section class="panel telemetry">
+      <div class="identity">
+        <p>Name: {{ report.name }}</p>
+        <p>Station: {{ report.station }}</p>
+      </div>
+      <div class="meters">
+        <article class="meter meter-wind{% if 'wind_knots' in report.broken_limits %} is-hot{% endif %}">
+          <p class="meter-line">Wind: {{ report.wind }}</p>
+          <div class="track" aria-hidden="true">
+            <span class="fill" style="width: {{ meter_width(report.wind, 'wind') }}"></span>
+          </div>
+          <p class="meter-scale">25 kt or less</p>
+        </article>
+        <article class="meter meter-temp{% if 'temp_c' in report.broken_limits %} is-hot{% endif %}">
+          <p class="meter-line">Temperature: {{ report.temperature }}</p>
+          <div class="track" aria-hidden="true">
+            <span class="fill" style="width: {{ meter_width(report.temperature, 'temperature') }}"></span>
+          </div>
+          <p class="meter-scale">4 °C or more</p>
+        </article>
+        <article class="meter meter-fuel{% if 'fuel_pct' in report.broken_limits %} is-hot{% endif %}">
+          <p class="meter-line">Fuel: {{ report.fuel }}</p>
+          <div class="track" aria-hidden="true">
+            <span class="fill" style="width: {{ meter_width(report.fuel, 'fuel') }}"></span>
+          </div>
+          <p class="meter-scale">98 to 100 percent</p>
+        </article>
+      </div>
+      <div class="voice">
+        <p class="voice-body">Note: {{ report.note }}</p>
+      </div>
+    </section>
+    <aside class="panel decision">
+      <p class="status-line st-{{ report.status or 'none' }}">Status: {{ report.status or "" }}</p>
+      {% if report.status == "approved" %}
+      <div class="seal">
+        <p>Approved by: {{ report.approver_name }}</p>
+        <p>Approved at: {{ report.approved_at }}</p>
+      </div>
       {% endif %}
-    </p>
-    <button type="submit">Approve</button>
-  </form>
-  {% elif approve_error %}
-  <p>{{ approve_error }}</p>
-  {% endif %}
-</body>
-</html>
+      {% if report.status == "pending_approval" and report.briefing %}
+      <form class="signoff" method="post" action="/console/{{ report.id }}/approve">
+        <p class="signoff-note">Type your name. Only this action approves the briefing.</p>
+        <p>
+          <label for="approver_name">Name</label>
+          <input id="approver_name" name="approver_name" type="text" value="{{ approver_name }}" autocomplete="name">
+          {% if approve_error %}
+          <span class="fault">{{ approve_error }}</span>
+          {% endif %}
+        </p>
+        <button class="commit commit-approve" type="submit">Approve</button>
+      </form>
+      {% elif approve_error %}
+      <p class="fault">{{ approve_error }}</p>
+      {% endif %}
+      <p {% if report.broken_limits %}class="is-hot"{% endif %}>Broken limits: {{ report.broken_limits_label }}</p>
+      {% if report.broken_limits %}
+      <ul class="chips">
+        {% for item in report.broken_limits %}
+        <li>{% if item == "wind_knots" %}Wind above 25 kt{% elif item == "temp_c" %}Temperature below 4 °C{% elif item == "fuel_pct" %}Fuel outside 98 to 100 percent{% else %}{{ item }}{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <div class="pair">
+        <p class="sev-{{ report.model_seriousness or 'none' }}">Model said: {{ report.model_seriousness or "" }}</p>
+        <p class="sev-{{ report.deadline_seriousness or 'none' }}">Deadline uses: {{ report.deadline_seriousness or "" }}</p>
+      </div>
+      <p {% if report.deadline_minutes == 5 %}class="is-short"{% endif %}>Deadline: {{ report.deadline_label }}</p>
+      <p>Due: {{ report.due_at or "" }}</p>
+      <p class="cost-line">Total cost: {{ report.total_cost_label }}</p>
+      {% if report.vehicle_part %}
+      <p class="part-line">Vehicle part: {{ report.vehicle_part }}</p>
+      {% endif %}
+      {% if report.vehicle_part_stand_in %}
+      <p class="stand-in">The model answer for the vehicle part was replaced.</p>
+      {% endif %}
+      {% if report.rounds_run %}
+      <p>Briefing rounds: {{ report.rounds_run }}</p>
+      {% endif %}
+      {% if report.missing_information %}
+      <p class="flag">Missing information: {{ report.missing_information_reason }}</p>
+      {% endif %}
+      {% if report.panic %}
+      <p class="flag">Panic: {{ report.panic_reason }}</p>
+      {% endif %}
+      {% if report.briefing %}
+      <p class="transmission">Briefing: {{ report.briefing }}</p>
+      {% endif %}
+    </aside>
+  </div>
+  <section class="panel trace-panel">
+      <div class="section-head">
+        <h2>Steps</h2>
+        <p class="section-note">{{ steps|length }} recorded. Each card is one step that ran.</p>
+      </div>
+      <ol class="trace">
+        {% for step in steps %}
+        <li class="outcome-{{ step.outcome }}">
+          <article class="step-card">
+            <div class="step-head">
+              <span class="step-index">{{ "%02d"|format(loop.index) }}</span>
+              <h3>{{ step.name }}</h3>
+            </div>
+            <div class="step-stats">
+              <p>Kind: {{ step.kind_label }}</p>
+              <p>Input tokens: {{ step.input_tokens_label }}</p>
+              <p>Output tokens: {{ step.output_tokens_label }}</p>
+              <p>Cost: {{ step.cost_label }}</p>
+            </div>
+            {% if step.outcome == "error" %}
+            <p class="step-fail">Failed: {{ step.detail }}</p>
+            {% elif step.detail %}
+            <p class="step-detail">{{ step.detail }}</p>
+            {% endif %}
+          </article>
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
+</article>
+{% endblock %}
